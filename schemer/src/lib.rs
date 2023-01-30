@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -22,9 +23,14 @@ use thiserror::Error;
 
 use crate::traversal::DfsPostOrderDirectional;
 
-#[macro_use]
 pub mod testing;
 mod traversal;
+
+#[cfg(feature = "async")]
+mod r#async;
+
+#[cfg(feature = "async")]
+pub use crate::r#async::AsyncAdapter;
 
 /// Metadata for defining the identity and dependence relations of migrations.
 /// Specific adapters require additional traits for actual application and
@@ -123,7 +129,7 @@ where
 #[macro_export]
 macro_rules! migration {
     ($name:ident, $id:expr, [ $( $dependency_id:expr ),*], $description:expr) => {
-        migration!(Uuid, $name, $id, [$($dependency_id),*], $description);
+        migration!(::uuid::Uuid, $name, $id, [$($dependency_id),*], $description);
     };
     ($ty:path, $name:ident, $id:expr, [ $( $dependency_id:expr ),*], $description:expr) => {
         impl $crate::Migration<$ty> for $name
@@ -215,31 +221,22 @@ pub enum MigratorError<I, T: std::error::Error + 'static> {
 }
 
 /// Primary schemer type for defining and applying migrations.
-pub struct Migrator<I, T: Adapter<I>> {
+pub struct Migrator<I, T, M, E> {
     adapter: T,
-    dependencies: Dag<T::MigrationType, ()>,
+    dependencies: Dag<M, ()>,
     id_map: HashMap<I, daggy::NodeIndex>,
+
+    _error_type: PhantomData<E>,
 }
 
-impl<I, T> Migrator<I, T>
+impl<I, T, M, E> Migrator<I, T, M, E>
 where
     I: Hash + Display + Eq + Clone,
-    T: Adapter<I>,
+    M: Migration<I>,
+    E: std::error::Error,
 {
-    /// Create a `Migrator` using the given `Adapter`.
-    pub fn new(adapter: T) -> Migrator<I, T> {
-        Migrator {
-            adapter,
-            dependencies: Dag::new(),
-            id_map: HashMap::new(),
-        }
-    }
-
     /// Register a migration into the dependency graph.
-    pub fn register(
-        &mut self,
-        migration: T::MigrationType,
-    ) -> Result<(), MigratorError<I, T::Error>> {
+    pub fn register(&mut self, migration: M) -> Result<(), MigratorError<I, E>> {
         let id = migration.id();
         if self.id_map.contains_key(&id) {
             return Err(MigratorError::Dependency(DependencyError::DuplicateId(id)));
@@ -254,8 +251,8 @@ where
     /// Register multiple migrations into the dependency graph.
     pub fn register_multiple(
         &mut self,
-        migrations: impl Iterator<Item = T::MigrationType>,
-    ) -> Result<(), MigratorError<I, T::Error>> {
+        migrations: impl Iterator<Item = M>,
+    ) -> Result<(), MigratorError<I, E>> {
         for migration in migrations {
             let id = migration.id();
             if self.id_map.contains_key(&id) {
@@ -270,7 +267,7 @@ where
     }
 
     /// Register multiple migrations into the dependency graph.
-    fn register_edges(&mut self) -> Result<(), MigratorError<I, T::Error>> {
+    fn register_edges(&mut self) -> Result<(), MigratorError<I, E>> {
         for (id, migration_idx) in self.id_map.iter() {
             let depends = self
                 .dependencies
@@ -328,6 +325,22 @@ where
         }
 
         Ok(target_set)
+    }
+}
+
+impl<I, T> Migrator<I, T, T::MigrationType, T::Error>
+where
+    I: Hash + Display + Eq + Clone,
+    T: Adapter<I>,
+{
+    /// Create a `Migrator` using the given `Adapter`.
+    pub fn new(adapter: T) -> Migrator<I, T, T::MigrationType, T::Error> {
+        Migrator {
+            adapter,
+            dependencies: Dag::new(),
+            id_map: HashMap::new(),
+            _error_type: PhantomData::default(),
+        }
     }
 
     /// Apply migrations as necessary to so that the specified migration is

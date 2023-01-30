@@ -19,6 +19,10 @@ repository = "https://github.com/aschampion/schemer"
 daggy = "0.8"
 thiserror = "1.0"
 indexmap = "1"
+async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 uuid = { version = "1" }
+
+[features]
+async = ["async-trait"]
