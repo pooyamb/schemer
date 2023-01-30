@@ -95,7 +95,7 @@ where
     let migration1 = A::mock(id_iter.next().unwrap(), HashSet::new());
     let uuid1 = migration1.id();
 
-    let mut migrator: Migrator<I, A> = Migrator::new(adapter);
+    let mut migrator = Migrator::new(adapter);
 
     migrator
         .register(migration1)

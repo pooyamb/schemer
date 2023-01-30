@@ -18,7 +18,6 @@ use std::sync::Arc;
 use daggy::petgraph::EdgeDirection;
 use daggy::{Dag, Walker};
 use indexmap::IndexSet;
-use log::{debug, info};
 use thiserror::Error;
 
 use crate::traversal::DfsPostOrderDirectional;
@@ -97,12 +96,8 @@ where
 /// ## Example
 ///
 /// ```rust
-/// #[macro_use]
-/// extern crate schemer;
-/// extern crate uuid;
-///
-/// use schemer::Migration;
-/// use uuid::{uuid};
+/// use schemer::{Migration, migration};
+/// use uuid::{Uuid, uuid};
 ///
 /// struct ParentMigration;
 /// migration!(
@@ -128,7 +123,7 @@ where
 #[macro_export]
 macro_rules! migration {
     ($name:ident, $id:expr, [ $( $dependency_id:expr ),*], $description:expr) => {
-        migration!(::uuid::Uuid, $name, $id, [$($dependency_id),*], $description);
+        migration!(Uuid, $name, $id, [$($dependency_id),*], $description);
     };
     ($ty:path, $name:ident, $id:expr, [ $( $dependency_id:expr ),*], $description:expr) => {
         impl $crate::Migration<$ty> for $name
@@ -246,7 +241,6 @@ where
         migration: T::MigrationType,
     ) -> Result<(), MigratorError<I, T::Error>> {
         let id = migration.id();
-        debug!("Registering migration {}", id);
         if self.id_map.contains_key(&id) {
             return Err(MigratorError::Dependency(DependencyError::DuplicateId(id)));
         }
@@ -264,7 +258,6 @@ where
     ) -> Result<(), MigratorError<I, T::Error>> {
         for migration in migrations {
             let id = migration.id();
-            debug!("Registering migration (with multiple) {}", id);
             if self.id_map.contains_key(&id) {
                 return Err(MigratorError::Dependency(DependencyError::DuplicateId(id)));
             }
@@ -342,12 +335,6 @@ where
     ///
     /// If `to` is `None`, apply all registered migrations.
     pub fn up(&mut self, to: Option<I>) -> Result<(), MigratorError<I, T::Error>> {
-        if let Some(to) = &to {
-            info!("Migrating up to target: {}", to);
-        } else {
-            info!("Migrating everything");
-        }
-
         // Register the edges
         self.register_edges()?;
 
@@ -365,7 +352,6 @@ where
                 continue;
             }
 
-            info!("Applying migration {}", id);
             self.adapter
                 .apply_migration(migration)
                 .map_err(|e| MigratorError::Migration {
@@ -385,12 +371,6 @@ where
     ///
     /// If `to` is `None`, revert all applied migrations.
     pub fn down(&mut self, to: Option<I>) -> Result<(), MigratorError<I, T::Error>> {
-        if let Some(to) = &to {
-            info!("Migrating up to target: {}", to);
-        } else {
-            info!("Migrating everything");
-        }
-
         // Register the edges
         self.register_edges()?;
 
@@ -413,7 +393,6 @@ where
                 continue;
             }
 
-            info!("Reverting migration {}", id);
             self.adapter
                 .revert_migration(migration)
                 .map_err(|e| MigratorError::Migration {
